@@ -1,4 +1,4 @@
-package com.solidgate;
+package com.solidgate.util;
 
 import com.google.common.hash.Hashing;
 

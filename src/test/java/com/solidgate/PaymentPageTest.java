@@ -16,28 +16,25 @@ import java.net.URL;
 
 import static com.google.gson.JsonParser.parseString;
 import static com.solidgate.RequestBodyStubs.PAYMENT_INIT_BODY;
-import static com.solidgate.AuthorisationUtil.PUBLIC_KEY;
-import static com.solidgate.AuthorisationUtil.generateSignature;
+import static com.solidgate.util.AuthorisationUtil.PUBLIC_KEY;
+import static com.solidgate.util.AuthorisationUtil.generateSignature;
+import static java.lang.Thread.sleep;
+import static org.apache.commons.lang3.StringUtils.EMPTY;
+import static org.junit.Assert.assertEquals;
 
 public class PaymentPageTest {
     private static final String BASE_URL = "https://payment-page.solidgate.com/";
-    private static final String ORDER_ID = "autotest_1741250764909tfq8m_testOrders";
-    private static final String AMOUNT = "10.99";
-    private static final String CURRENCY = "USD";
     private static final String CARD = "4067429974719265";
     private static final String EXPIRATION_DATE = "12/34";
     private static final String CVV = "123";
     private static final String CARD_HOLDER = "Name Surname";
 
-
-
     private static ChromeDriver driver;
     private static URL paymentPageUrl;
 
     @BeforeAll
-    public static void setUp() throws IOException, ParseException {
+    public static void beforeAll() throws IOException, ParseException {
         System.setProperty("webdriver.chrome.driver", "/Users/tatana/Desktop/solid/chromedriver");
-
 
         CloseableHttpClient httpClient = HttpClients.createDefault();
         HttpPost httpPost = new HttpPost(BASE_URL + "api/v1/init");
@@ -51,74 +48,144 @@ public class PaymentPageTest {
         paymentPageUrl = URI.create(parseString(json).getAsJsonObject().get("url").getAsString()).toURL();
     }
 
-    @AfterAll
-    static void afterAll() {
-        // Clean up
+    @BeforeEach
+    void setUp() throws InterruptedException {
+        driver = new ChromeDriver();
+        driver.get(paymentPageUrl.toString());
+        sleep(2000);
+    }
+
+    @AfterEach
+    void tearDown() {
+        driver.quit();
     }
 
     @Test
-    public void testPaymentSuccessful() throws InterruptedException {
-        driver = new ChromeDriver();
-        driver.get(paymentPageUrl.toString());
-
-        Thread.sleep(2000);
-
+    public void testPaymentSuccessful() {
         driver.findElement(By.id("ccnumber")).sendKeys(CARD);
-        Thread.sleep(4000);
-
         driver.findElement(By.name("cardExpiryDate")).sendKeys(EXPIRATION_DATE);
-        Thread.sleep(4000);
-
         driver.findElement(By.id("cvv2")).sendKeys(CVV);
-        Thread.sleep(4000);
-
         driver.findElement(By.name("cardHolder")).sendKeys(CARD_HOLDER);
-        Thread.sleep(4000);
 
-        driver.quit();
+        submitForm();
     }
 
     @Test
-    public void testPaymentIncorrectCardValidation() throws InterruptedException {
-        driver = new ChromeDriver();
-        driver.get(paymentPageUrl.toString());
-
-        Thread.sleep(2000);
-
+    public void testPaymentIncorrectDataValidation() {
         driver.findElement(By.id("ccnumber")).sendKeys("CARD");
-        Thread.sleep(4000);
-
         driver.findElement(By.name("cardExpiryDate")).sendKeys("test");
-        Thread.sleep(4000);
-
         driver.findElement(By.id("cvv2")).sendKeys("test");
-        Thread.sleep(4000);
-
         driver.findElement(By.name("cardHolder")).sendKeys("test");
-        Thread.sleep(4000);
 
-        driver.quit();
+        submitForm();
+
+        assertEquals(driver.findElementById("ccnumber").getAttribute("value"), EMPTY);
+        assertEquals(driver.findElementByName("cardExpiryDate").getAttribute("value"), EMPTY);
+        assertEquals(driver.findElementById("cvv2").getAttribute("value"), EMPTY);
+        assertEquals(driver.findElementByName("cardHolder").getAttribute("value"), "TEST");
     }
 
     @Test
-    public void testPaymentEmptyFields() throws InterruptedException {
-        driver = new ChromeDriver();
-        driver.get(paymentPageUrl.toString());
-
-        Thread.sleep(2000);
-
+    public void testPaymentEmptyFields() {
         driver.findElement(By.id("ccnumber")).sendKeys("");
-        Thread.sleep(4000);
-
         driver.findElement(By.name("cardExpiryDate")).sendKeys("");
-        Thread.sleep(4000);
-
         driver.findElement(By.id("cvv2")).sendKeys("");
-        Thread.sleep(4000);
-
         driver.findElement(By.name("cardHolder")).sendKeys("");
-        Thread.sleep(4000);
 
-        driver.quit();
+        submitForm();
+
+        assertEquals(driver.findElement(By.id("cardNumber_error-text")).getText(),
+                "Verifique o número do cartão");
+        assertEquals(driver.findElement(By.id("cardExpiryDate_error-text")).getText(),
+                "Insira a data de validade do seu cartão");
+        assertEquals(driver.findElement(By.id("cardCvv_error-text")).getText(),
+                "Insira o código de segurança do cartão de 3 dígitos");
+        assertEquals(driver.findElement(By.id("cardHolder_error-text")).getText(),
+                "Campo obrigatório");
+    }
+
+    @Test
+    public void testPaymentErrorCardMessage() {
+        driver.findElement(By.id("ccnumber")).sendKeys("1111");
+
+        submitForm();
+
+        assertEquals(driver.findElement(By.id("cardNumber_error-text")).getText(),
+                "Verifique o número do cartão");
+    }
+
+
+    @Test
+    public void testPaymentErrorCardExpiryMessage() {
+        driver.findElement(By.name("cardExpiryDate")).sendKeys("11/12");
+
+        submitForm();
+
+        assertEquals(driver.findElement(By.id("cardExpiryDate_error-text")).getText(),
+                "A data de validade já passou");
+    }
+
+    @Test
+    public void testPaymentErrorCardExpiryEmptyMessage() {
+        driver.findElement(By.name("cardExpiryDate")).sendKeys("");
+
+        submitForm();
+
+        assertEquals(driver.findElement(By.id("cardExpiryDate_error-text")).getText(),
+                "Insira a data de validade do seu cartão");
+    }
+
+    @Test
+    public void testPaymentErrorCVCMessage() {
+        driver.findElement(By.id("cvv2")).sendKeys("1");
+
+        submitForm();
+
+        assertEquals(driver.findElement(By.id("cardCvv_error-text")).getText(),
+                "Insira o código de segurança do cartão de 3 dígitos");
+    }
+
+    @Test
+    public void testPaymentErrorCVCEmptyMessage() {
+        driver.findElement(By.id("cvv2")).sendKeys("");
+
+        submitForm();
+
+        assertEquals(driver.findElement(By.id("cardCvv_error-text")).getText(),
+                "Insira o código de segurança do cartão de 3 dígitos");
+    }
+
+    @Test
+    public void testPaymentErrorNameOnCardMessage() {
+        driver.findElement(By.name("cardHolder")).sendKeys("0000");
+
+        submitForm();
+
+        assertEquals(driver.findElement(By.id("cardHolder_error-text")).getText(),
+                "Campo obrigatório");
+    }
+
+    @Test
+    public void testPaymentErrorIncorrectNameOnCardMessage() {
+        driver.findElement(By.name("cardHolder")).sendKeys("W");
+
+        submitForm();
+
+        assertEquals(driver.findElement(By.id("cardHolder_error-text")).getText(),
+                "O nome do titular do cartão é inválido");
+    }
+
+    @Test
+    public void testPaymentEmptyNameOnCardMessage() {
+        driver.findElement(By.name("cardHolder")).sendKeys("");
+
+        submitForm();
+
+        assertEquals(driver.findElement(By.id("cardHolder_error-text")).getText(),
+                "Campo obrigatório");
+    }
+
+    private static void submitForm() {
+        driver.findElementByCssSelector("form button[type='submit']").click();
     }
 }
